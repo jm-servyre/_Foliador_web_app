@@ -4,7 +4,7 @@ import time
 import io
 from datetime import datetime
 from werkzeug.utils import secure_filename
-from flask import Flask, render_template, request, send_file, redirect, url_for, flash, Response
+from flask import Flask, render_template, request, send_file, redirect, url_for, flash
 
 # Intentar importar la librería de procesamiento de PDF
 try:
@@ -14,32 +14,29 @@ except ImportError as e:
     print(f"Error al importar pdf_processor: {e}")
     PDF_PROCESSOR_AVAILABLE = False
 
-# Intentar importar la librería de vista previa (Poppler)
+# Intentar importar la librería de vista previa
 try:
     from pdf2image import convert_from_bytes
     PDF_PREVIEW_AVAILABLE = True
 except ImportError as e:
-    print(f"Vista previa deshabilitada en este entorno (Falta Poppler).")
+    print(f"Vista previa deshabilitada (Falta Poppler).")
     PDF_PREVIEW_AVAILABLE = False
 
 app = Flask(__name__)
 app.secret_key = str(uuid.uuid4())
+# Límite de carga: 2GB (para red local), pero Render tiene sus propios límites físicos
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024 
 
-# RUTA DINÁMICA: Funciona en Windows y Render (Linux)
+# Configuración de Rutas
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMP_FOLDER = os.path.join(BASE_DIR, 'temp_files')
 
-# Asegurar que la carpeta exista al arrancar
+# Crear carpeta temporal al inicio
 if not os.path.exists(TEMP_FOLDER):
     os.makedirs(TEMP_FOLDER)
 
-ALLOWED_EXTENSIONS = {'pdf'}
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
 def cleanup_temp_files(hours_old=1):
+    """Limpia archivos viejos para no llenar el disco del servidor."""
     now = time.time()
     cutoff = now - (hours_old * 3600)
     if os.path.exists(TEMP_FOLDER):
@@ -51,74 +48,64 @@ def cleanup_temp_files(hours_old=1):
             except Exception as e:
                 print(f"Error limpiando {filename}: {e}")
 
-@app.errorhandler(413)
-def too_large_error(e):
-    flash('🚨 El archivo excede el límite de 2GB.', 'error')
-    return redirect(url_for('upload_file')), 413
-
 @app.route('/', methods=['GET', 'POST'])
 def upload_file():
     if request.method == 'POST':
-        if 'pdf_file' not in request.files or request.files['pdf_file'].filename == '':
+        file = request.files.get('pdf_file')
+        if not file or file.filename == '':
             flash('No se seleccionó ningún archivo.', 'error')
-            return redirect(url_for('upload_file'))
-        
-        file = request.files['pdf_file']
-        if not allowed_file(file.filename):
-            flash('Solo se aceptan archivos PDF.', 'error')
             return redirect(url_for('upload_file'))
 
         try:
+            # Generar nombres únicos
             file_id = str(uuid.uuid4())
-            filename = secure_filename(file.filename)
-            temp_input_path = os.path.join(TEMP_FOLDER, f'{file_id}_in.pdf')
-            temp_output_path = os.path.join(TEMP_FOLDER, f'{file_id}_out.pdf')
+            safe_name = secure_filename(file.filename)
+            temp_input = os.path.join(TEMP_FOLDER, f'{file_id}_in.pdf')
+            temp_output = os.path.join(TEMP_FOLDER, f'{file_id}_out.pdf')
 
-            file.save(temp_input_path)
+            # OPTIMIZACIÓN: Guardar archivo por fragmentos (Chunks) para ahorrar RAM
+            with open(temp_input, 'wb') as f:
+                while True:
+                    chunk = file.read(8192) # 8KB por fragmento
+                    if not chunk:
+                        break
+                    f.write(chunk)
 
-            # Obtener Parámetros
-            start_number = int(request.form.get('start_number', 1))
-            start_page = int(request.form.get('start_page', 1) or 1)
-            end_page_raw = request.form.get('end_page')
-            end_page = int(end_page_raw) if end_page_raw and end_page_raw.isdigit() else None
+            # Recoger parámetros del formulario
+            start_num = int(request.form.get('start_number', 1))
+            start_pg = int(request.form.get('start_page', 1) or 1)
+            end_pg_raw = request.form.get('end_page')
+            end_pg = int(end_pg_raw) if end_pg_raw and end_pg_raw.isdigit() else None
             
-            font_size = int(request.form.get('font_size', 16))
-            offset_cm = float(request.form.get('offset', 1.0))
-            corner = request.form.get('corner', 'bottom-right')
-            orientation = request.form.get('orientation', 'horizontal')
-            
+            # Procesar el foliado
             success = agregar_folios_web(
-                input_path=temp_input_path,
-                output_path=temp_output_path,
+                input_path=temp_input,
+                output_path=temp_output,
                 font="Courier-Bold",
-                font_size=font_size,
-                start_number=start_number,
-                offset_cm=offset_cm,
-                corner=corner,
-                orientation=orientation,
-                start_page=start_page,
-                end_page=end_page,
+                font_size=int(request.form.get('font_size', 16)),
+                start_number=start_num,
+                offset_cm=float(request.form.get('offset', 1.0)),
+                corner=request.form.get('corner', 'bottom-right'),
+                orientation=request.form.get('orientation', 'horizontal'),
+                start_page=start_pg,
+                end_page=end_pg,
                 preview_mode=False
             )
 
-            if success and os.path.exists(temp_output_path):
-                # NOMBRE DE DESCARGA
-                base_name = filename.rsplit('.', 1)[0]
-                download_name = f"Foliado_{base_name}.pdf"
-
-                # MÉTODO DE ENVÍO SEGURO PARA CLOUD
+            if success and os.path.exists(temp_output):
+                # Preparar descarga
+                download_name = f"Foliado_{safe_name}"
                 return send_file(
-                    temp_output_path,
+                    temp_output,
                     mimetype='application/pdf',
                     as_attachment=True,
                     download_name=download_name
                 )
-                
             else:
-                flash('Error al procesar el PDF.', 'error')
+                flash('Error al procesar el documento.', 'error')
                 
         except Exception as e:
-            flash(f'Error: {e}', 'error')
+            flash(f'Ocurrió un error: {str(e)}', 'error')
             
         return redirect(url_for('upload_file'))
 
@@ -129,10 +116,19 @@ def upload_file():
 @app.route('/preview', methods=['POST'])
 def preview_file():
     if not PDF_PREVIEW_AVAILABLE:
-        return "Vista previa no disponible en este servidor.", 501
+        return "Vista previa deshabilitada.", 501
     
     file = request.files.get('pdf_file')
     if not file: return "Error", 400
+
+    # SEGURIDAD: No generar vista previa si el archivo es > 30MB en la nube
+    # Esto evita que Render reinicie el servidor por falta de RAM.
+    file.seek(0, os.SEEK_END)
+    size_mb = file.tell() / (1024 * 1024)
+    file.seek(0)
+
+    if size_mb > 30:
+        return "Archivo muy pesado para vista previa en la nube. Use la versión local.", 413
 
     try:
         file_id = str(uuid.uuid4())
@@ -141,6 +137,8 @@ def preview_file():
         
         file.save(temp_in)
 
+        # Foliar solo la página de inicio para la vista previa
+        start_pg = int(request.form.get('start_page_prev', 1) or 1)
         agregar_folios_web(
             input_path=temp_in,
             output_path=temp_out,
@@ -150,12 +148,13 @@ def preview_file():
             offset_cm=float(request.form.get('offset_prev', 1.0)),
             corner=request.form.get('corner_prev', 'bottom-right'),
             orientation=request.form.get('orientation_prev', 'horizontal'),
-            start_page=int(request.form.get('start_page_prev', 1) or 1),
-            end_page=int(request.form.get('start_page_prev', 1) or 1),
+            start_page=start_pg,
+            end_page=start_pg,
             preview_mode=True
         )
         
         with open(temp_out, 'rb') as f:
+            # Convertir a imagen (proceso costoso en RAM)
             img_data = convert_from_bytes(f.read(), first_page=1, last_page=1, fmt='png', dpi=72)
         
         img_io = io.BytesIO()
@@ -165,8 +164,10 @@ def preview_file():
         return send_file(img_io, mimetype='image/png')
             
     except Exception as e:
-        return str(e), 500
+        return f"Error en vista previa: {str(e)}", 500
 
 if __name__ == '__main__':
+    # Limpiar archivos al arrancar
     cleanup_temp_files(hours_old=1)
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Host 0.0.0.0 es vital para acceso LAN
+    app.run(host='0.0.0.0', port=5000, debug=False)
