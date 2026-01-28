@@ -106,7 +106,7 @@ def agregar_folios_web(input_path, output_path, font="Courier-Bold", font_size=1
         pages_foliated_count = len(pages_to_process)
         
         if pages_foliated_count <= 0 and not preview_mode:
-             raise ValueError("El rango de páginas especificado es inválido o está fuera de los límites del PDF.")
+            raise ValueError("El rango de páginas especificado es inválido o está fuera de los límites del PDF.")
 
         # --- 2. Añadir Páginas Anteriores SIN Foliar ---
         if not preview_mode:
@@ -146,7 +146,7 @@ def agregar_folios_web(input_path, output_path, font="Courier-Bold", font_size=1
         
         # Registro de Éxito
         if not preview_mode:
-             log_success(start_number, pages_foliated_count, corner)
+            log_success(start_number, pages_foliated_count, corner)
 
         return True
 
