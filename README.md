@@ -34,6 +34,3 @@ Si prefieres usarlo de forma interna sin Internet:
 | **VCRUNTIME140_1.dll** | Falta runtime de C++. | Instalar el [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe). |
 | **Página no carga en LAN** | Firewall o Red Pública. | Cambiar red a **Privada** y abrir puerto 5000. |
 | **Error en Render** | Falta Procfile o requirements. | Verificar que ambos archivos estén en la raíz del repositorio. |
-
----
-*Documentación técnica por Jorge Meneses - 2026*
