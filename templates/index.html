@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 
 {% block content %}
+
     <div id="action-row">
+        
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}
@@ -12,17 +14,11 @@
             {% endif %}
         {% endwith %}
         
-        <div id="heavy-file-warning" style="display: none; background-color: #fff3cd; color: #856404; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #ffeeba; text-align: left; font-size: 0.9em;">
-            <strong>⚠️ Archivo pesado detectado:</strong> 
-            Este PDF supera los 30MB. Para asegurar que el proceso termine con éxito en la nube, la <strong>Vista Previa</strong> ha sido deshabilitada.
-            <br><em>Sugerencia: Puedes foliar directamente o usar la versión local para previsualizar.</em>
-        </div>
-
         <h1>Foliador PDF Web</h1>
 
         {% if not pdf_processor_available %}
         <div class="instruction-card full-width-card">
-            <p><strong>⚠️ Advertencia:</strong> El procesador de PDF no está disponible en el servidor.</p>
+            <p><strong>⚠️ Advertencia:</strong> La librería `pdf_processor` (o sus dependencias como `pypdf`/`reportlab`) no se pudo cargar. El foliado principal no funcionará hasta que se solucione este problema en el servidor.</p>
         </div>
         {% endif %}
         
@@ -33,43 +29,53 @@
         </label>
     </div>
     
+    
     <div id="config-and-preview-section" style="display: none;">
+        
         <form id="foliator-form" method="POST" enctype="multipart/form-data" action="{{ url_for('upload_file') }}">
+            
             <input type="file" name="pdf_file" id="pdf_file" accept="application/pdf" style="display: none;">
             
             <div id="config-col-full">
                 <h2>1. Configuración del Foliado</h2>
+                
                 <label for="start_number">Número de folio inicial:</label>
                 <input type="number" id="start_number" name="start_number" value="1" min="1" required>
+                <p class="help-text">El número tiene formato de 4 dígitos (ej: 1 = 0001).</p>
                 
                 <div class="control-group-split">
                     <div>
-                        <label for="start_page">Página inicial:</label>
+                        <label for="start_page">Página inicial a foliar:</label>
                         <input type="number" id="start_page" name="start_page" value="1" min="1">
+                        <p class="help-text">Página del PDF donde comienza (1 para inicio).</p>
                     </div>
                     <div>
-                        <label for="end_page">Página final:</label>
+                        <label for="end_page">Página final a foliar:</label>
                         <input type="number" id="end_page" name="end_page">
+                        <p class="help-text">Deja vacío para foliar hasta el final.</p>
                     </div>
                 </div>
             </div>
             
             <div id="style-col-full">
                 <h2>2. Estilo y Posición</h2>
+                
                 <div class="control-group-split">
                     <div>
-                        <label for="font_size">Tamaño Fuente:</label>
+                        <label for="font_size">Tamaño de Fuente:</label>
                         <input type="number" id="font_size" name="font_size" value="14" min="8" max="72">
+                        <p class="help-text">Tamaño de Fuente ( 8 a 72)</p>
                     </div>
                     <div>
-                        <label for="offset">Margen (cm):</label>
+                        <label for="offset">Margen Lateral (cm):</label>
                         <input type="number" id="offset" name="offset" value="1.0" min="0.5" max="5.0" step="0.1">
+                        <p class="help-text">Margen (0.5 a 5.0 cm)</p>
                     </div>
                 </div>
                 
                 <div class="control-group-split">
                     <div>
-                        <label for="corner">Posición:</label>
+                        <label for="corner">Esquina de Posición:</label>
                         <select id="corner" name="corner">
                             <option value="bottom-right" selected>Abajo - Derecha</option>
                             <option value="bottom-left">Abajo - Izquierda</option>
@@ -82,42 +88,63 @@
                         <select id="orientation" name="orientation">
                             <option value="horizontal" selected>Horizontal</option>
                             <option value="vertical">Vertical</option>
+                            
                         </select>
                     </div>
                 </div>
             </div>
             
             <button type="submit" id="submit-button" disabled>
-                Foliar y Descargar PDF
+                <span style="font-size: 1.5em;"></span> Foliar y Descargar PDF
             </button>
         </form>
         
         <div id="preview-col-right">
             <h2>3. Vista Previa</h2>
+            
+            {% if not pdf_preview_available %}
+            <div class="instruction-card full-width-card" style="background-color: #fff3cd; border-color: #ffeeba;">
+                <p><strong>⚠️ Advertencia de Vista Previa:</strong> La dependencia `pdf2image` (o Poppler) no está disponible en el servidor. La previsualización está deshabilitada.</p>
+            </div>
+            {% endif %}
+            
+            <div id="preview-info-box">
+                <p></p>
+                <div id="simulated-folio-display">
+                    Folio que se aplicará en esta vista: <strong id="current-folio-number">#0001</strong>
+                </div>
+            </div>
+            
             <div id="preview-container">
-                <p id="preview-message">Sube un PDF para ver la previsualización.</p>
-                <img id="preview-image" src="" alt="Vista previa" style="display:none; max-width: 100%;">
+                <p id="preview-message">Sube un PDF para ver la previsualización de la primera página.</p>
+                <img id="preview-image" src="" alt="Vista previa del folio en la primera página">
+            </div>
+            <p class="help-text-preview">Nota: La imagen es de baja resolución solo para verificar la posición y estilo del folio. <br>La calidad del PDF final será la original.</p>
+        </div>
+    </div>
+    
+    <div id="contact-info">
+        <h3></h3>
+        <p></p>
+        <p class="help-text-contact">© Foliador PDF 2026 - Servyre<br>
+            ¿Dudas o sugerencias? Escribeme a: 
+            <a href="mailto:jorge.meneses@servyre.com">jorge.meneses@servyre.com</a>
+        </p>
+    </div>
+    
+    <div id="loading-modal" class="modal">
+        <div class="modal-content">
+            <h3>Procesando Archivo...</h3>
+            <p>Por favor, espera. Esto puede tardar si el archivo es grande.</p>
+            <div class="progress-bar-container">
+                <div id="upload-progress-bar" class="progress-bar"></div>
+                <span id="progress-text">0%</span>
             </div>
         </div>
     </div>
-
-    {% endblock %}
+    
+{% endblock %}
 
 {% block scripts %}
     <script src="{{ url_for('static', filename='script.js') }}"></script>
-    <script>
-        // Lógica de validación de tamaño de archivo
-        const dragInput = document.getElementById('pdf_file_drag');
-        const heavyWarning = document.getElementById('heavy-file-warning');
-        
-        dragInput.addEventListener('change', function() {
-            const file = this.files[0];
-            if (file) {
-                const sizeMB = file.size / (1024 * 1024);
-                // Si pesa más de 30MB, activamos la bandera global
-                window.isHeavyFile = sizeMB > 30;
-                heavyWarning.style.display = window.isHeavyFile ? 'block' : 'none';
-            }
-        });
-    </script>
 {% endblock %}
